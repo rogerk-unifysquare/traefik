@@ -5,14 +5,14 @@ import (
 	"io/ioutil"
 
 	corev1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
-	v1beta12 "k8s.io/api/extensions/v1beta1"
+	networking "k8s.io/api/networking/v1"
+	v1 "k8s.io/api/networking/v1"
 )
 
 var _ Client = (*clientMock)(nil)
 
 type clientMock struct {
-	ingresses []*extensionsv1beta1.Ingress
+	ingresses []*networking.Ingress
 	services  []*corev1.Service
 	secrets   []*corev1.Secret
 	endpoints []*corev1.Endpoints
@@ -43,7 +43,7 @@ func newClientMock(paths ...string) clientMock {
 				c.secrets = append(c.secrets, o)
 			case *corev1.Endpoints:
 				c.endpoints = append(c.endpoints, o)
-			case *v1beta12.Ingress:
+			case *v1.Ingress:
 				c.ingresses = append(c.ingresses, o)
 			default:
 				panic(fmt.Sprintf("Unknown runtime object %+v %T", o, o))
@@ -54,7 +54,7 @@ func newClientMock(paths ...string) clientMock {
 	return c
 }
 
-func (c clientMock) GetIngresses() []*extensionsv1beta1.Ingress {
+func (c clientMock) GetIngresses() []*networking.Ingress {
 	return c.ingresses
 }
 

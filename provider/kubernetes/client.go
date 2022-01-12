@@ -9,7 +9,7 @@ import (
 
 	"github.com/traefik/traefik/log"
 	corev1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	kubeerror "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -42,7 +42,7 @@ func (reh *resourceEventHandler) OnDelete(obj interface{}) {
 // The stores can then be accessed via the Get* functions.
 type Client interface {
 	WatchAll(namespaces Namespaces, stopCh <-chan struct{}) (<-chan interface{}, error)
-	GetIngresses() []*extensionsv1beta1.Ingress
+	GetIngresses() []*networking.Ingress
 	GetService(namespace, name string) (*corev1.Service, bool, error)
 	GetSecret(namespace, name string) (*corev1.Secret, bool, error)
 	GetEndpoints(namespace, name string) (*corev1.Endpoints, bool, error)
@@ -127,7 +127,7 @@ func (c *clientImpl) WatchAll(namespaces Namespaces, stopCh <-chan struct{}) (<-
 	eventHandler := c.newResourceEventHandler(eventCh)
 	for _, ns := range namespaces {
 		factory := informers.NewFilteredSharedInformerFactory(c.clientset, resyncPeriod, ns, nil)
-		factory.Extensions().V1beta1().Ingresses().Informer().AddEventHandler(eventHandler)
+		factory.Networking().V1().Ingresses().Informer().AddEventHandler(eventHandler)
 		factory.Core().V1().Services().Informer().AddEventHandler(eventHandler)
 		factory.Core().V1().Endpoints().Informer().AddEventHandler(eventHandler)
 		c.factories[ns] = factory
@@ -158,10 +158,10 @@ func (c *clientImpl) WatchAll(namespaces Namespaces, stopCh <-chan struct{}) (<-
 }
 
 // GetIngresses returns all Ingresses for observed namespaces in the cluster.
-func (c *clientImpl) GetIngresses() []*extensionsv1beta1.Ingress {
-	var result []*extensionsv1beta1.Ingress
+func (c *clientImpl) GetIngresses() []*networking.Ingress {
+	var result []*networking.Ingress
 	for ns, factory := range c.factories {
-		ings, err := factory.Extensions().V1beta1().Ingresses().Lister().List(c.ingressLabelSelector)
+		ings, err := factory.Networking().V1().Ingresses().Lister().List(c.ingressLabelSelector)
 		if err != nil {
 			log.Errorf("Failed to list ingresses in namespace %s: %s", ns, err)
 		}
@@ -178,7 +178,7 @@ func (c *clientImpl) UpdateIngressStatus(namespace, name, ip, hostname string) e
 		return fmt.Errorf("failed to get ingress %s/%s: namespace is not within watched namespaces", namespace, name)
 	}
 
-	ing, err := c.factories[c.lookupNamespace(namespace)].Extensions().V1beta1().Ingresses().Lister().Ingresses(namespace).Get(name)
+	ing, err := c.factories[c.lookupNamespace(namespace)].Networking().V1().Ingresses().Lister().Ingresses(namespace).Get(name)
 	if err != nil {
 		return fmt.Errorf("failed to get ingress %s/%s: %v", namespace, name, err)
 	}
@@ -191,9 +191,9 @@ func (c *clientImpl) UpdateIngressStatus(namespace, name, ip, hostname string) e
 		}
 	}
 	ingCopy := ing.DeepCopy()
-	ingCopy.Status = extensionsv1beta1.IngressStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: ip, Hostname: hostname}}}}
+	ingCopy.Status = networking.IngressStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: ip, Hostname: hostname}}}}
 
-	_, err = c.clientset.ExtensionsV1beta1().Ingresses(ingCopy.Namespace).UpdateStatus(context.Background(), ingCopy, metav1.UpdateOptions{})
+	_, err = c.clientset.NetworkingV1().Ingresses(ingCopy.Namespace).UpdateStatus(context.Background(), ingCopy, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to update ingress status %s/%s: %v", namespace, name, err)
 	}
@@ -251,7 +251,7 @@ func (c *clientImpl) newResourceEventHandler(events chan<- interface{}) cache.Re
 	return &cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			// Ignore Ingresses that do not match our custom label selector.
-			if ing, ok := obj.(*extensionsv1beta1.Ingress); ok {
+			if ing, ok := obj.(*networking.Ingress); ok {
 				lbls := labels.Set(ing.GetLabels())
 				return c.ingressLabelSelector.Matches(lbls)
 			}

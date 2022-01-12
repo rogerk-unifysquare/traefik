@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networking "k8s.io/api/networking/v1"
 )
 
 func TestString(t *testing.T) {
@@ -311,9 +311,9 @@ func TestComputeServiceWeights(t *testing.T) {
 			k8sObjects := MustDecodeYaml(yamlContent)
 			require.Len(t, k8sObjects, 1)
 
-			var ingress *extensionsv1beta1.Ingress
+			var ingress *networking.Ingress
 			switch o := k8sObjects[0].(type) {
-			case *extensionsv1beta1.Ingress:
+			case *networking.Ingress:
 				ingress = o
 			default:
 				require.Fail(t, fmt.Sprintf("Unknown runtime object %+v %T", o, o))

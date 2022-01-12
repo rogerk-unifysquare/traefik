@@ -8,7 +8,7 @@ import (
 	"github.com/traefik/traefik/provider/label"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networking "k8s.io/api/networking/v1"
 )
 
 type weightAllocator interface {
@@ -51,7 +51,7 @@ func (f *fractionalWeightAllocator) String() string {
 	return fmt.Sprintf("[%s]", strings.Join(res, " "))
 }
 
-func newFractionalWeightAllocator(ingress *extensionsv1beta1.Ingress, client Client) (*fractionalWeightAllocator, error) {
+func newFractionalWeightAllocator(ingress *networking.Ingress, client Client) (*fractionalWeightAllocator, error) {
 	servicePercentageWeights, err := getServicesPercentageWeights(ingress)
 	if err != nil {
 		return nil, err
@@ -78,11 +78,11 @@ func newFractionalWeightAllocator(ingress *extensionsv1beta1.Ingress, client Cli
 				fractionalPathWeights[pa.Path] = newPercentageValueFromFloat64(1)
 			}
 
-			if weight, ok := servicePercentageWeights[pa.Backend.ServiceName]; ok {
+			if weight, ok := servicePercentageWeights[pa.Backend.Service.Name]; ok {
 				ingSvc := ingressService{
 					host:    rule.Host,
 					path:    pa.Path,
-					service: pa.Backend.ServiceName,
+					service: pa.Backend.Service.Name,
 				}
 
 				serviceWeights[ingSvc] = weight.computeWeight(serviceInstanceCounts[ingSvc])
@@ -94,7 +94,7 @@ func newFractionalWeightAllocator(ingress *extensionsv1beta1.Ingress, client Cli
 					return nil, fmt.Errorf("percentage value %s must not exceed 100%%", assignedWeight.String())
 				}
 			} else {
-				fractionalPathServices[pa.Path] = append(fractionalPathServices[pa.Path], pa.Backend.ServiceName)
+				fractionalPathServices[pa.Path] = append(fractionalPathServices[pa.Path], pa.Backend.Service.Name)
 			}
 		}
 
@@ -141,7 +141,7 @@ func (f *fractionalWeightAllocator) getWeight(host, path, serviceName string) in
 	}]
 }
 
-func getServicesPercentageWeights(ingress *extensionsv1beta1.Ingress) (map[string]percentageValue, error) {
+func getServicesPercentageWeights(ingress *networking.Ingress) (map[string]percentageValue, error) {
 	percentageWeight := make(map[string]string)
 
 	annotationPercentageWeights := getAnnotationName(ingress.Annotations, annotationKubernetesServiceWeights)
@@ -161,17 +161,17 @@ func getServicesPercentageWeights(ingress *extensionsv1beta1.Ingress) (map[strin
 	return servicesPercentageWeights, nil
 }
 
-func getServiceInstanceCounts(ingress *extensionsv1beta1.Ingress, client Client) (map[ingressService]int, error) {
+func getServiceInstanceCounts(ingress *networking.Ingress, client Client) (map[ingressService]int, error) {
 	serviceInstanceCounts := map[ingressService]int{}
 
 	for _, rule := range ingress.Spec.Rules {
 		for _, pa := range rule.HTTP.Paths {
-			svc, exists, err := client.GetService(ingress.Namespace, pa.Backend.ServiceName)
+			svc, exists, err := client.GetService(ingress.Namespace, pa.Backend.Service.Name)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get service %s/%s: %v", ingress.Namespace, pa.Backend.ServiceName, err)
+				return nil, fmt.Errorf("failed to get service %s/%s: %v", ingress.Namespace, pa.Backend.Service.Name, err)
 			}
 			if !exists {
-				return nil, fmt.Errorf("service not found for %s/%s", ingress.Namespace, pa.Backend.ServiceName)
+				return nil, fmt.Errorf("service not found for %s/%s", ingress.Namespace, pa.Backend.Service.Name)
 			}
 			if svc.Spec.Type == corev1.ServiceTypeExternalName {
 				// external-name service has only one instance b/c it will actually be interpreted as a DNS record
@@ -179,17 +179,17 @@ func getServiceInstanceCounts(ingress *extensionsv1beta1.Ingress, client Client)
 				serviceInstanceCounts[ingressService{
 					host:    rule.Host,
 					path:    pa.Path,
-					service: pa.Backend.ServiceName,
+					service: pa.Backend.Service.Name,
 				}] = 1
 				continue
 			}
 			count := 0
-			endpoints, exists, err := client.GetEndpoints(ingress.Namespace, pa.Backend.ServiceName)
+			endpoints, exists, err := client.GetEndpoints(ingress.Namespace, pa.Backend.Service.Name)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get endpoints %s/%s: %v", ingress.Namespace, pa.Backend.ServiceName, err)
+				return nil, fmt.Errorf("failed to get endpoints %s/%s: %v", ingress.Namespace, pa.Backend.Service.Name, err)
 			}
 			if !exists {
-				return nil, fmt.Errorf("endpoints not found for %s/%s", ingress.Namespace, pa.Backend.ServiceName)
+				return nil, fmt.Errorf("endpoints not found for %s/%s", ingress.Namespace, pa.Backend.Service.Name)
 			}
 
 			for _, subset := range endpoints.Subsets {
@@ -199,7 +199,7 @@ func getServiceInstanceCounts(ingress *extensionsv1beta1.Ingress, client Client)
 			serviceInstanceCounts[ingressService{
 				host:    rule.Host,
 				path:    pa.Path,
-				service: pa.Backend.ServiceName,
+				service: pa.Backend.Service.Name,
 			}] += count
 		}
 	}

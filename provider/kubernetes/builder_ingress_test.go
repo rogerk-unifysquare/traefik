@@ -4,27 +4,27 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func buildIngress(opts ...func(*extensionsv1beta1.Ingress)) *extensionsv1beta1.Ingress {
-	i := &extensionsv1beta1.Ingress{}
+func buildIngress(opts ...func(*networking.Ingress)) *networking.Ingress {
+	i := &networking.Ingress{}
 	for _, opt := range opts {
 		opt(i)
 	}
 	return i
 }
 
-func iNamespace(value string) func(*extensionsv1beta1.Ingress) {
-	return func(i *extensionsv1beta1.Ingress) {
+func iNamespace(value string) func(*networking.Ingress) {
+	return func(i *networking.Ingress) {
 		i.Namespace = value
 	}
 }
 
-func iAnnotation(name string, value string) func(*extensionsv1beta1.Ingress) {
-	return func(i *extensionsv1beta1.Ingress) {
+func iAnnotation(name string, value string) func(*networking.Ingress) {
+	return func(i *networking.Ingress) {
 		if i.Annotations == nil {
 			i.Annotations = make(map[string]string)
 		}
@@ -32,9 +32,9 @@ func iAnnotation(name string, value string) func(*extensionsv1beta1.Ingress) {
 	}
 }
 
-func iRules(opts ...func(*extensionsv1beta1.IngressSpec)) func(*extensionsv1beta1.Ingress) {
-	return func(i *extensionsv1beta1.Ingress) {
-		s := &extensionsv1beta1.IngressSpec{}
+func iRules(opts ...func(*networking.IngressSpec)) func(*networking.Ingress) {
+	return func(i *networking.Ingress) {
+		s := &networking.IngressSpec{}
 		for _, opt := range opts {
 			opt(s)
 		}
@@ -42,9 +42,9 @@ func iRules(opts ...func(*extensionsv1beta1.IngressSpec)) func(*extensionsv1beta
 	}
 }
 
-func iSpecBackends(opts ...func(*extensionsv1beta1.IngressSpec)) func(*extensionsv1beta1.Ingress) {
-	return func(i *extensionsv1beta1.Ingress) {
-		s := &extensionsv1beta1.IngressSpec{}
+func iSpecBackends(opts ...func(*networking.IngressSpec)) func(*networking.Ingress) {
+	return func(i *networking.Ingress) {
+		s := &networking.IngressSpec{}
 		for _, opt := range opts {
 			opt(s)
 		}
@@ -52,26 +52,42 @@ func iSpecBackends(opts ...func(*extensionsv1beta1.IngressSpec)) func(*extension
 	}
 }
 
-func iSpecBackend(opts ...func(*extensionsv1beta1.IngressBackend)) func(*extensionsv1beta1.IngressSpec) {
-	return func(s *extensionsv1beta1.IngressSpec) {
-		p := &extensionsv1beta1.IngressBackend{}
+func iSpecBackend(opts ...func(*networking.IngressBackend)) func(*networking.IngressSpec) {
+	return func(s *networking.IngressSpec) {
+		p := &networking.IngressBackend{}
 		for _, opt := range opts {
 			opt(p)
 		}
-		s.Backend = p
+		s.DefaultBackend = p
 	}
 }
 
-func iIngressBackend(name string, port intstr.IntOrString) func(*extensionsv1beta1.IngressBackend) {
-	return func(p *extensionsv1beta1.IngressBackend) {
-		p.ServiceName = name
-		p.ServicePort = port
+func iIngressBackend(name string, port intstr.IntOrString) func(*networking.IngressBackend) {
+	return func(p *networking.IngressBackend) {
+		var bePort networking.ServiceBackendPort
+
+		if port.Type == intstr.Int {
+			bePort = networking.ServiceBackendPort{
+				Number: port.IntVal,
+			}
+		} else {
+			bePort = networking.ServiceBackendPort{
+				Name: port.StrVal,
+			}
+		}
+
+		be := &networking.IngressServiceBackend{
+			Name: name,
+			Port: bePort,
+		}
+
+		p.Service = be
 	}
 }
 
-func iRule(opts ...func(*extensionsv1beta1.IngressRule)) func(*extensionsv1beta1.IngressSpec) {
-	return func(spec *extensionsv1beta1.IngressSpec) {
-		r := &extensionsv1beta1.IngressRule{}
+func iRule(opts ...func(*networking.IngressRule)) func(*networking.IngressSpec) {
+	return func(spec *networking.IngressSpec) {
+		r := &networking.IngressRule{}
 		for _, opt := range opts {
 			opt(r)
 		}
@@ -79,24 +95,24 @@ func iRule(opts ...func(*extensionsv1beta1.IngressRule)) func(*extensionsv1beta1
 	}
 }
 
-func iHost(name string) func(*extensionsv1beta1.IngressRule) {
-	return func(rule *extensionsv1beta1.IngressRule) {
+func iHost(name string) func(*networking.IngressRule) {
+	return func(rule *networking.IngressRule) {
 		rule.Host = name
 	}
 }
 
-func iPaths(opts ...func(*extensionsv1beta1.HTTPIngressRuleValue)) func(*extensionsv1beta1.IngressRule) {
-	return func(rule *extensionsv1beta1.IngressRule) {
-		rule.HTTP = &extensionsv1beta1.HTTPIngressRuleValue{}
+func iPaths(opts ...func(*networking.HTTPIngressRuleValue)) func(*networking.IngressRule) {
+	return func(rule *networking.IngressRule) {
+		rule.HTTP = &networking.HTTPIngressRuleValue{}
 		for _, opt := range opts {
 			opt(rule.HTTP)
 		}
 	}
 }
 
-func onePath(opts ...func(*extensionsv1beta1.HTTPIngressPath)) func(*extensionsv1beta1.HTTPIngressRuleValue) {
-	return func(irv *extensionsv1beta1.HTTPIngressRuleValue) {
-		p := &extensionsv1beta1.HTTPIngressPath{}
+func onePath(opts ...func(*networking.HTTPIngressPath)) func(*networking.HTTPIngressRuleValue) {
+	return func(irv *networking.HTTPIngressRuleValue) {
+		p := &networking.HTTPIngressPath{}
 		for _, opt := range opts {
 			opt(p)
 		}
@@ -104,33 +120,49 @@ func onePath(opts ...func(*extensionsv1beta1.HTTPIngressPath)) func(*extensionsv
 	}
 }
 
-func iPath(name string) func(*extensionsv1beta1.HTTPIngressPath) {
-	return func(p *extensionsv1beta1.HTTPIngressPath) {
+func iPath(name string) func(*networking.HTTPIngressPath) {
+	return func(p *networking.HTTPIngressPath) {
 		p.Path = name
 	}
 }
 
-func iBackend(name string, port intstr.IntOrString) func(*extensionsv1beta1.HTTPIngressPath) {
-	return func(p *extensionsv1beta1.HTTPIngressPath) {
-		p.Backend = extensionsv1beta1.IngressBackend{
-			ServiceName: name,
-			ServicePort: port,
+func iBackend(name string, port intstr.IntOrString) func(*networking.HTTPIngressPath) {
+	return func(p *networking.HTTPIngressPath) {
+		var bePort networking.ServiceBackendPort
+
+		if port.Type == intstr.Int {
+			bePort = networking.ServiceBackendPort{
+				Number: port.IntVal,
+			}
+		} else {
+			bePort = networking.ServiceBackendPort{
+				Name: port.StrVal,
+			}
+		}
+
+		be := &networking.IngressServiceBackend{
+			Name: name,
+			Port: bePort,
+		}
+
+		p.Backend = networking.IngressBackend{
+			Service: be,
 		}
 	}
 }
 
-func iTLSes(opts ...func(*extensionsv1beta1.IngressTLS)) func(*extensionsv1beta1.Ingress) {
-	return func(i *extensionsv1beta1.Ingress) {
+func iTLSes(opts ...func(*networking.IngressTLS)) func(*networking.Ingress) {
+	return func(i *networking.Ingress) {
 		for _, opt := range opts {
-			iTLS := extensionsv1beta1.IngressTLS{}
+			iTLS := networking.IngressTLS{}
 			opt(&iTLS)
 			i.Spec.TLS = append(i.Spec.TLS, iTLS)
 		}
 	}
 }
 
-func iTLS(secret string, hosts ...string) func(*extensionsv1beta1.IngressTLS) {
-	return func(i *extensionsv1beta1.IngressTLS) {
+func iTLS(secret string, hosts ...string) func(*networking.IngressTLS) {
+	return func(i *networking.IngressTLS) {
 		i.SecretName = secret
 		i.Hosts = hosts
 	}
@@ -160,30 +192,38 @@ func TestBuildIngress(t *testing.T) {
 	assert.EqualValues(t, sampleIngress(), i)
 }
 
-func sampleIngress() *extensionsv1beta1.Ingress {
-	return &extensionsv1beta1.Ingress{
+func sampleIngress() *networking.Ingress {
+	return &networking.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "testing",
 		},
-		Spec: extensionsv1beta1.IngressSpec{
-			Rules: []extensionsv1beta1.IngressRule{
+		Spec: networking.IngressSpec{
+			Rules: []networking.IngressRule{
 				{
 					Host: "foo",
-					IngressRuleValue: extensionsv1beta1.IngressRuleValue{
-						HTTP: &extensionsv1beta1.HTTPIngressRuleValue{
-							Paths: []extensionsv1beta1.HTTPIngressPath{
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{
 								{
 									Path: "/bar",
-									Backend: extensionsv1beta1.IngressBackend{
-										ServiceName: "service1",
-										ServicePort: intstr.FromInt(80),
+									Backend: networking.IngressBackend{
+										Service: &networking.IngressServiceBackend{
+											Name: "service1",
+											Port: networking.ServiceBackendPort{
+												Number: 80,
+											},
+										},
 									},
 								},
 								{
 									Path: "/namedthing",
-									Backend: extensionsv1beta1.IngressBackend{
-										ServiceName: "service4",
-										ServicePort: intstr.FromString("https"),
+									Backend: networking.IngressBackend{
+										Service: &networking.IngressServiceBackend{
+											Name: "service4",
+											Port: networking.ServiceBackendPort{
+												Name: "https",
+											},
+										},
 									},
 								},
 							},
@@ -192,19 +232,27 @@ func sampleIngress() *extensionsv1beta1.Ingress {
 				},
 				{
 					Host: "bar",
-					IngressRuleValue: extensionsv1beta1.IngressRuleValue{
-						HTTP: &extensionsv1beta1.HTTPIngressRuleValue{
-							Paths: []extensionsv1beta1.HTTPIngressPath{
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{
 								{
-									Backend: extensionsv1beta1.IngressBackend{
-										ServiceName: "service3",
-										ServicePort: intstr.FromString("https"),
+									Backend: networking.IngressBackend{
+										Service: &networking.IngressServiceBackend{
+											Name: "service3",
+											Port: networking.ServiceBackendPort{
+												Name: "https",
+											},
+										},
 									},
 								},
 								{
-									Backend: extensionsv1beta1.IngressBackend{
-										ServiceName: "service2",
-										ServicePort: intstr.FromInt(802),
+									Backend: networking.IngressBackend{
+										Service: &networking.IngressServiceBackend{
+											Name: "service2",
+											Port: networking.ServiceBackendPort{
+												Number: 802,
+											},
+										},
 									},
 								},
 							},
@@ -212,7 +260,7 @@ func sampleIngress() *extensionsv1beta1.Ingress {
 					},
 				},
 			},
-			TLS: []extensionsv1beta1.IngressTLS{
+			TLS: []networking.IngressTLS{
 				{
 					Hosts:      []string{"foo"},
 					SecretName: "tls-secret",

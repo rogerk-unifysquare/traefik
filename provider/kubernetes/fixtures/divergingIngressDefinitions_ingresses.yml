@@ -1,4 +1,4 @@
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   namespace: testing
@@ -8,11 +8,13 @@ spec:
     http:
       paths:
       - backend:
-          serviceName: service1
-          servicePort: "80"
+          service:
+            name: service1
+            port:
+              number: 80
 
 ---
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   namespace: testing
@@ -22,5 +24,7 @@ spec:
     http:
       paths:
       - backend:
-          serviceName: missing
-          servicePort: "80"
+          service:
+            name: missing
+            port:
+              number: 80

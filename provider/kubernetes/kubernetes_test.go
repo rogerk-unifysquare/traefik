@@ -14,7 +14,7 @@ import (
 	"github.com/traefik/traefik/tls"
 	"github.com/traefik/traefik/types"
 	corev1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -1162,7 +1162,7 @@ func Test_addGlobalBackend(t *testing.T) {
 	testCases := []struct {
 		desc     string
 		client   clientMock
-		ingress  *extensionsv1beta1.Ingress
+		ingress  *networking.Ingress
 		config   *types.Configuration
 		expected string
 	}{
@@ -1378,7 +1378,7 @@ func TestRuleType(t *testing.T) {
 
 			watchChan := make(chan interface{})
 			client := clientMock{
-				ingresses: []*extensionsv1beta1.Ingress{ingress},
+				ingresses: []*networking.Ingress{ingress},
 				services:  []*corev1.Service{service},
 				watchChan: watchChan,
 			}
@@ -1449,7 +1449,7 @@ func TestRuleFails(t *testing.T) {
 				annotationKubernetesRequestModifier: test.requestModifierAnnotation,
 			}
 
-			_, err := getRuleForPath(extensionsv1beta1.HTTPIngressPath{Path: "/path"}, ingress)
+			_, err := getRuleForPath(networking.HTTPIngressPath{Path: "/path"}, ingress)
 			assert.Error(t, err)
 		})
 	}
@@ -1522,7 +1522,7 @@ func TestModifierType(t *testing.T) {
 
 			watchChan := make(chan interface{})
 			client := clientMock{
-				ingresses: []*extensionsv1beta1.Ingress{ingress},
+				ingresses: []*networking.Ingress{ingress},
 				services:  []*corev1.Service{service},
 				watchChan: watchChan,
 			}
@@ -1591,14 +1591,14 @@ func TestModifierFails(t *testing.T) {
 				annotationKubernetesRequestModifier: test.requestModifierAnnotation,
 			}
 
-			_, err := getRuleForPath(extensionsv1beta1.HTTPIngressPath{Path: "/path"}, ingress)
+			_, err := getRuleForPath(networking.HTTPIngressPath{Path: "/path"}, ingress)
 			assert.Error(t, err)
 		})
 	}
 }
 
 func Test_getFrontendRedirect_InvalidRedirectAnnotation(t *testing.T) {
-	ingresses := []*extensionsv1beta1.Ingress{
+	ingresses := []*networking.Ingress{
 		buildIngress(iNamespace("awesome"),
 			iAnnotation(annotationKubernetesRedirectRegex, `bad\.regex`),
 			iAnnotation(annotationKubernetesRedirectReplacement, "test"),
@@ -1626,7 +1626,7 @@ func Test_getFrontendRedirect_InvalidRedirectAnnotation(t *testing.T) {
 }
 
 func TestProvider_loadIngresses_KubeAPIErrors(t *testing.T) {
-	ingresses := []*extensionsv1beta1.Ingress{
+	ingresses := []*networking.Ingress{
 		buildIngress(
 			iNamespace("testing"),
 			iRules(
@@ -1822,7 +1822,7 @@ func TestGetTLS(t *testing.T) {
 
 	testCases := []struct {
 		desc      string
-		ingress   *extensionsv1beta1.Ingress
+		ingress   *networking.Ingress
 		client    Client
 		result    map[string]*tls.Configuration
 		errResult string
@@ -2158,7 +2158,7 @@ func TestProvider_updateIngressStatus(t *testing.T) {
 				IngressEndpoint: test.ingressEndpoint,
 			}
 
-			err := p.updateIngressStatus(&extensionsv1beta1.Ingress{}, client)
+			err := p.updateIngressStatus(&networking.Ingress{}, client)
 
 			if test.expectedError {
 				require.Error(t, err)

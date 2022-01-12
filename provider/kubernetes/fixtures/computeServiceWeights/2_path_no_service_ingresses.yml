@@ -1,4 +1,4 @@
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
@@ -14,10 +14,14 @@ spec:
     http:
       paths:
       - backend:
-          serviceName: noservice
-          servicePort: 8080
+          service:
+            name: noservice
+            port:
+              number: 8080
         path: /foo
       - backend:
-          serviceName: noservice
-          servicePort: 8080
+          service:
+            name: noservice
+            port:
+              number: 8080
         path: /bar

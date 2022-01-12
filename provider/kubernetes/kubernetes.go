@@ -27,9 +27,8 @@ import (
 	"github.com/traefik/traefik/types"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 var _ provider.Provider = (*Provider)(nil)
@@ -219,7 +218,7 @@ func (p *Provider) loadIngresses(k8sClient Client) (*types.Configuration, error)
 			continue
 		}
 
-		if i.Spec.Backend != nil {
+		if i.Spec.DefaultBackend != nil {
 			err := p.addGlobalBackend(k8sClient, i, templateObjects)
 			if err != nil {
 				log.Errorf("Error creating global backend for ingress %s/%s: %v", i.Namespace, i.Name, err)
@@ -263,7 +262,7 @@ func (p *Provider) loadIngresses(k8sClient Client) (*types.Configuration, error)
 				baseName := r.Host + pa.Path
 
 				if len(baseName) == 0 {
-					baseName = pa.Backend.ServiceName
+					baseName = pa.Backend.Service.Name
 				}
 
 				entryPoints := getSliceStringValue(i.Annotations, annotationKubernetesFrontendEntryPoints)
@@ -321,14 +320,14 @@ func (p *Provider) loadIngresses(k8sClient Client) (*types.Configuration, error)
 					}
 				}
 
-				service, exists, err := k8sClient.GetService(i.Namespace, pa.Backend.ServiceName)
+				service, exists, err := k8sClient.GetService(i.Namespace, pa.Backend.Service.Name)
 				if err != nil {
-					log.Errorf("Error while retrieving service information from k8s API %s/%s: %v", i.Namespace, pa.Backend.ServiceName, err)
+					log.Errorf("Error while retrieving service information from k8s API %s/%s: %v", i.Namespace, pa.Backend.Service.Name, err)
 					return nil, err
 				}
 
 				if !exists {
-					log.Errorf("Service not found for %s/%s", i.Namespace, pa.Backend.ServiceName)
+					log.Errorf("Service not found for %s/%s", i.Namespace, pa.Backend.Service.Name)
 					continue
 				}
 
@@ -368,7 +367,7 @@ func (p *Provider) loadIngresses(k8sClient Client) (*types.Configuration, error)
 				protocol := label.DefaultProtocol
 
 				for _, port := range service.Spec.Ports {
-					if equalPorts(port, pa.Backend.ServicePort) {
+					if equalPorts(port, pa.Backend.Service.Port) {
 						if port.Port == 443 || strings.HasPrefix(port.Name, "https") {
 							protocol = "https"
 						}
@@ -389,7 +388,7 @@ func (p *Provider) loadIngresses(k8sClient Client) (*types.Configuration, error)
 							if port.Port != 443 && port.Port != 80 {
 								url = fmt.Sprintf("%s:%d", url, port.Port)
 							}
-							externalNameServiceWeight := weightAllocator.getWeight(r.Host, pa.Path, pa.Backend.ServiceName)
+							externalNameServiceWeight := weightAllocator.getWeight(r.Host, pa.Path, pa.Backend.Service.Name)
 							templateObjects.Backends[baseName].Servers[url] = types.Server{
 								URL:    url,
 								Weight: externalNameServiceWeight,
@@ -426,7 +425,7 @@ func (p *Provider) loadIngresses(k8sClient Client) (*types.Configuration, error)
 
 									templateObjects.Backends[baseName].Servers[name] = types.Server{
 										URL:    url,
-										Weight: weightAllocator.getWeight(r.Host, pa.Path, pa.Backend.ServiceName),
+										Weight: weightAllocator.getWeight(r.Host, pa.Path, pa.Backend.Service.Name),
 									}
 								}
 							}
@@ -448,7 +447,7 @@ func (p *Provider) loadIngresses(k8sClient Client) (*types.Configuration, error)
 	return templateObjects, nil
 }
 
-func (p *Provider) updateIngressStatus(i *extensionsv1beta1.Ingress, k8sClient Client) error {
+func (p *Provider) updateIngressStatus(i *networking.Ingress, k8sClient Client) error {
 	// Only process if an IngressEndpoint has been configured
 	if p.IngressEndpoint == nil {
 		return nil
@@ -495,7 +494,7 @@ func (p *Provider) loadConfig(templateObjects types.Configuration) *types.Config
 	return configuration
 }
 
-func (p *Provider) addGlobalBackend(cl Client, i *extensionsv1beta1.Ingress, templateObjects *types.Configuration) error {
+func (p *Provider) addGlobalBackend(cl Client, i *networking.Ingress, templateObjects *types.Configuration) error {
 	// Ensure that we are not duplicating the frontend
 	if _, exists := templateObjects.Frontends[defaultFrontendName]; exists {
 		return errors.New("duplicate frontend: " + defaultFrontendName)
@@ -513,12 +512,12 @@ func (p *Provider) addGlobalBackend(cl Client, i *extensionsv1beta1.Ingress, tem
 		},
 	}
 
-	service, exists, err := cl.GetService(i.Namespace, i.Spec.Backend.ServiceName)
+	service, exists, err := cl.GetService(i.Namespace, i.Spec.DefaultBackend.Service.Name)
 	if err != nil {
-		return fmt.Errorf("error while retrieving service information from k8s API %s/%s: %v", i.Namespace, i.Spec.Backend.ServiceName, err)
+		return fmt.Errorf("error while retrieving service information from k8s API %s/%s: %v", i.Namespace, i.Spec.DefaultBackend.Service.Name, err)
 	}
 	if !exists {
-		return fmt.Errorf("service not found for %s/%s", i.Namespace, i.Spec.Backend.ServiceName)
+		return fmt.Errorf("service not found for %s/%s", i.Namespace, i.Spec.DefaultBackend.Service.Name)
 	}
 
 	templateObjects.Backends[defaultBackendName].CircuitBreaker = getCircuitBreaker(service)
@@ -529,7 +528,7 @@ func (p *Provider) addGlobalBackend(cl Client, i *extensionsv1beta1.Ingress, tem
 
 	for _, port := range service.Spec.Ports {
 
-		if !equalPorts(port, i.Spec.Backend.ServicePort) {
+		if !equalPorts(port, i.Spec.DefaultBackend.Service.Port) {
 			continue
 		}
 
@@ -574,7 +573,7 @@ func (p *Provider) addGlobalBackend(cl Client, i *extensionsv1beta1.Ingress, tem
 
 				protocol := "http"
 				for _, address := range subset.Addresses {
-					if endpointPort == 443 || strings.HasPrefix(i.Spec.Backend.ServicePort.String(), "https") {
+					if endpointPort == 443 || strings.HasPrefix(i.Spec.DefaultBackend.Service.Port.Name, "https") {
 						protocol = "https"
 					}
 
@@ -653,7 +652,7 @@ func throttleEvents(throttleDuration time.Duration, stop chan bool, eventsChan <
 	return eventsChanBuffered
 }
 
-func getRuleForPath(pa extensionsv1beta1.HTTPIngressPath, i *extensionsv1beta1.Ingress) (string, error) {
+func getRuleForPath(pa networking.HTTPIngressPath, i *networking.Ingress) (string, error) {
 	if len(pa.Path) == 0 {
 		return "", nil
 	}
@@ -733,7 +732,7 @@ func getRuleForHost(host string) string {
 	return "Host:" + host
 }
 
-func getTLS(ingress *extensionsv1beta1.Ingress, k8sClient Client, tlsConfigs map[string]*tls.Configuration) error {
+func getTLS(ingress *networking.Ingress, k8sClient Client, tlsConfigs map[string]*tls.Configuration) error {
 	for _, t := range ingress.Spec.TLS {
 		if t.SecretName == "" {
 			log.Debugf("Skipping TLS sub-section for ingress %s/%s: No secret name provided", ingress.Namespace, ingress.Name)
@@ -871,11 +870,11 @@ func endpointPortNumber(servicePort corev1.ServicePort, endpointPorts []corev1.E
 	return 0
 }
 
-func equalPorts(servicePort corev1.ServicePort, ingressPort intstr.IntOrString) bool {
-	if int(servicePort.Port) == ingressPort.IntValue() {
+func equalPorts(servicePort corev1.ServicePort, ingressPort networking.ServiceBackendPort) bool {
+	if int(servicePort.Port) == int(ingressPort.Number) {
 		return true
 	}
-	if servicePort.Name != "" && servicePort.Name == ingressPort.String() {
+	if servicePort.Name != "" && servicePort.Name == ingressPort.Name {
 		return true
 	}
 	return false
@@ -888,7 +887,7 @@ func (p *Provider) shouldProcessIngress(annotationIngressClass string) bool {
 	return annotationIngressClass == p.IngressClass
 }
 
-func getAuthConfig(i *extensionsv1beta1.Ingress, k8sClient Client) (*types.Auth, error) {
+func getAuthConfig(i *networking.Ingress, k8sClient Client) (*types.Auth, error) {
 	authType := getStringValue(i.Annotations, annotationKubernetesAuthType, "")
 	if len(authType) == 0 {
 		return nil, nil
@@ -927,7 +926,7 @@ func getAuthConfig(i *extensionsv1beta1.Ingress, k8sClient Client) (*types.Auth,
 	return auth, nil
 }
 
-func getBasicAuthConfig(i *extensionsv1beta1.Ingress, k8sClient Client) (*types.Basic, error) {
+func getBasicAuthConfig(i *networking.Ingress, k8sClient Client) (*types.Basic, error) {
 	credentials, err := getAuthCredentials(i, k8sClient)
 	if err != nil {
 		return nil, err
@@ -939,7 +938,7 @@ func getBasicAuthConfig(i *extensionsv1beta1.Ingress, k8sClient Client) (*types.
 	}, nil
 }
 
-func getDigestAuthConfig(i *extensionsv1beta1.Ingress, k8sClient Client) (*types.Digest, error) {
+func getDigestAuthConfig(i *networking.Ingress, k8sClient Client) (*types.Digest, error) {
 	credentials, err := getAuthCredentials(i, k8sClient)
 	if err != nil {
 		return nil, err
@@ -950,7 +949,7 @@ func getDigestAuthConfig(i *extensionsv1beta1.Ingress, k8sClient Client) (*types
 	}, nil
 }
 
-func getAuthCredentials(i *extensionsv1beta1.Ingress, k8sClient Client) ([]string, error) {
+func getAuthCredentials(i *networking.Ingress, k8sClient Client) ([]string, error) {
 	authSecret := getStringValue(i.Annotations, annotationKubernetesAuthSecret, "")
 	if authSecret == "" {
 		return nil, fmt.Errorf("auth-secret annotation %s must be set", annotationKubernetesAuthSecret)
@@ -1000,7 +999,7 @@ func loadAuthCredentials(namespace, secretName string, k8sClient Client) ([]stri
 	return credentials, nil
 }
 
-func getForwardAuthConfig(i *extensionsv1beta1.Ingress, k8sClient Client) (*types.Forward, error) {
+func getForwardAuthConfig(i *networking.Ingress, k8sClient Client) (*types.Forward, error) {
 	authURL := getStringValue(i.Annotations, annotationKubernetesAuthForwardURL, "")
 	if len(authURL) == 0 {
 		return nil, fmt.Errorf("forward authentication requires a url")
@@ -1057,7 +1056,7 @@ func loadAuthTLSSecret(namespace, secretName string, k8sClient Client) (string, 
 	return getCertificateBlocks(secret, namespace, secretName)
 }
 
-func getFrontendRedirect(i *extensionsv1beta1.Ingress, baseName, path string) *types.Redirect {
+func getFrontendRedirect(i *networking.Ingress, baseName, path string) *types.Redirect {
 	permanent := getBoolValue(i.Annotations, annotationKubernetesRedirectPermanent, false)
 
 	if appRoot := getStringValue(i.Annotations, annotationKubernetesAppRoot, ""); appRoot != "" && (path == "/" || path == "") {
@@ -1103,7 +1102,7 @@ func getFrontendRedirect(i *extensionsv1beta1.Ingress, baseName, path string) *t
 	return nil
 }
 
-func getWhiteList(i *extensionsv1beta1.Ingress) *types.WhiteList {
+func getWhiteList(i *networking.Ingress) *types.WhiteList {
 	ranges := getSliceStringValue(i.Annotations, annotationKubernetesWhiteListSourceRange)
 	if len(ranges) <= 0 {
 		return nil
@@ -1177,7 +1176,7 @@ func getStickiness(service *corev1.Service) *types.Stickiness {
 	}
 }
 
-func getHeader(i *extensionsv1beta1.Ingress) *types.Headers {
+func getHeader(i *networking.Ingress) *types.Headers {
 	headers := &types.Headers{
 		CustomRequestHeaders:    getMapValue(i.Annotations, annotationKubernetesCustomRequestHeaders),
 		CustomResponseHeaders:   getMapValue(i.Annotations, annotationKubernetesCustomResponseHeaders),
@@ -1231,7 +1230,7 @@ func getCircuitBreaker(service *corev1.Service) *types.CircuitBreaker {
 	return nil
 }
 
-func getErrorPages(i *extensionsv1beta1.Ingress) map[string]*types.ErrorPage {
+func getErrorPages(i *networking.Ingress) map[string]*types.ErrorPage {
 	var errorPages map[string]*types.ErrorPage
 
 	pagesRaw := getStringValue(i.Annotations, annotationKubernetesErrorPages, "")
@@ -1247,7 +1246,7 @@ func getErrorPages(i *extensionsv1beta1.Ingress) map[string]*types.ErrorPage {
 	return errorPages
 }
 
-func getRateLimit(i *extensionsv1beta1.Ingress) *types.RateLimit {
+func getRateLimit(i *networking.Ingress) *types.RateLimit {
 	var rateLimit *types.RateLimit
 
 	rateRaw := getStringValue(i.Annotations, annotationKubernetesRateLimit, "")
@@ -1263,7 +1262,7 @@ func getRateLimit(i *extensionsv1beta1.Ingress) *types.RateLimit {
 	return rateLimit
 }
 
-func getPassTLSClientCert(i *extensionsv1beta1.Ingress) *types.TLSClientHeaders {
+func getPassTLSClientCert(i *networking.Ingress) *types.TLSClientHeaders {
 	var passTLSClientCert *types.TLSClientHeaders
 
 	passRaw := getStringValue(i.Annotations, annotationKubernetesPassTLSClientCert, "")
